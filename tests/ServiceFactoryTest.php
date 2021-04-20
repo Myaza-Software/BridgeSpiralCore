@@ -12,9 +12,9 @@ declare(strict_types=1);
 namespace Spiral\Bridge\Core\Test;
 
 use PHPUnit\Framework\TestCase;
-use Psr\Container\ContainerInterface;
 use Spiral\Bridge\Core\ServiceFactory;
 use Spiral\Bridge\Core\ServiceIdResolverInterface;
+use Spiral\Bridge\Core\Test\Stub\Container;
 
 final class ServiceFactoryTest extends TestCase
 {
@@ -24,15 +24,26 @@ final class ServiceFactoryTest extends TestCase
         $serviceId     = sprintf($serviceIdMask, 'user');
         $dependency    = new \stdClass();
 
-        $container      = $this->getContainer([$serviceId => $dependency]);
+        $container      = new Container([$serviceId => $dependency]);
         $serviceFactory = new ServiceFactory($container, [$this->getServiceIdResolver($serviceIdMask)]);
-
-        $service = $serviceFactory->make($serviceId, ['user' => 'user']);
+        $service        = $serviceFactory->make(\stdClass::class, ['user' => 'user']);
 
         $this->assertInstanceOf(\stdClass::class, $service);
+        $this->assertEquals(spl_object_id($dependency), spl_object_id($service));
     }
 
-    private function getServiceIdResolver(string $serviceIdMask): object
+    public function testNoUseServiceIdResolver(): void
+    {
+        $service        = new \stdClass();
+        $container      = new Container([\stdClass::class => $service]);
+        $serviceFactory = new ServiceFactory($container, []);
+        $result         = $serviceFactory->make(\stdClass::class);
+
+        $this->assertInstanceOf(\stdClass::class, $result);
+        $this->assertEquals(spl_object_id($result), spl_object_id($service));
+    }
+
+    private function getServiceIdResolver(string $serviceIdMask): ServiceIdResolverInterface
     {
         return new class($serviceIdMask) implements ServiceIdResolverInterface {
             /**
@@ -47,49 +58,12 @@ final class ServiceFactoryTest extends TestCase
 
             public function support(string $class, array $parameters): bool
             {
-                return \stdClass::class === $class && $parameters['user'];
+                return \stdClass::class === $class && array_key_exists('user', $parameters);
             }
 
             public function resolve(string $class, array $parameters): string
             {
                 return sprintf($this->serviceIdMask, $parameters['user']);
-            }
-        };
-    }
-
-    /**
-     * @param array<string,mixed> $dependencies
-     */
-    private function getContainer(array $dependencies): ContainerInterface
-    {
-        return new class($dependencies) implements ContainerInterface {
-            /**
-             * @var array<string,mixed>
-             */
-            private $dependencies;
-
-            /**
-             * @param array<string,mixed> $dependencies
-             */
-            public function __construct(array $dependencies)
-            {
-                $this->dependencies = $dependencies;
-            }
-
-            public function get(string $id)
-            {
-                $dependency = $this->dependencies[$id] ?? null;
-
-                if (null === $dependency) {
-                    throw new \RuntimeException('Not found service:' . $id);
-                }
-
-                return $dependency;
-            }
-
-            public function has(string $id): bool
-            {
-                return null === ($this->dependencies[$id] ?? null);
             }
         };
     }
